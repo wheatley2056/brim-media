@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/BrimMedia/BrimMedia.csproj" />
+  <Project Path="tests/BrimMedia.Tests/BrimMedia.Tests.csproj" />
+</Solution>
