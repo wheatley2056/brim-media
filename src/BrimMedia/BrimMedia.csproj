@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Media+ für Brim: Songtexte, Lautstärke der Musik-App und (optional) die Spotify-Warteschlange.
+    Ergänzt Brims eigene Wiedergabe (Cover, Steuerung, Mixer), liest den Titel ebenfalls über die
+    Windows-Medienschnittstelle (SMTC). Core/ ist plattformneutral und wird von den Tests mitgebaut,
+    Windows/ spricht SMTC, Core Audio und DPAPI. Build-Ausgabe ist der fertige Plugin-Ordner.
+  -->
+  <PropertyGroup>
+    <!-- Kein Konsolenfenster, wenn Brim das Plugin startet; stdout/stderr landen trotzdem im Plugin-Log. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>$(BrimWindowsTfm)</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <AssemblyName>BrimMedia</AssemblyName>
+    <RootNamespace>BrimMedia</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="BrimMedia.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(BrimRoot)\src\Brim.Sdk\Brim.Sdk.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
