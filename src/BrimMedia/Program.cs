@@ -1,5 +1,5 @@
 // Media+ für Brim: ergänzt Brims eigene Wiedergabe um mitlaufende Songtexte, die Lautstärke der Musik-App
-// und, nach optionaler Anmeldung bei Spotify, die Warteschlange. Widgets auf „Jetzt“ und eine Karte im Tab „Plugins“.
+// und, nach optionaler Anmeldung bei Spotify, die Warteschlange. Alles als Widgets auf „Jetzt“.
 using System.Diagnostics;
 using Brim.Sdk;
 using BrimMedia.Core;
@@ -32,7 +32,6 @@ var plugin = new MediaPlugin(
 
 brim.ActionInvoked += (action, value) => _ = plugin.HandleActionAsync(action, value);
 brim.SettingsChanged += values => _ = plugin.ApplySettingsAsync(PluginSettings.From(values));
-brim.TabVisibilityChanged += visible => _ = plugin.SetTabVisibleAsync(visible);
 brim.WidgetsPlaced += placed => _ = plugin.SetPlacedWidgetsAsync(placed);
 _ = plugin.SetPlacedWidgetsAsync(brim.PlacedWidgets);
 

@@ -1,10 +1,9 @@
 {
   "id": "de.brim.media",
   "name": "Media+",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "BrimMedia.exe",
   "api": "1",
-  "slots": ["expanded.tab"],
   "permissions": ["media", "network"],
   "widgets": [
     { "id": "lyrics", "name": "Songtext", "description": "Läuft mit der Musik mit", "glyph": "", "sizes": ["wide", "medium", "large", "full"] },
@@ -13,7 +12,6 @@
   ],
   "settings": [
     { "key": "lyrics", "type": "bool", "label": "Songtexte von lrclib.net laden (schickt Titel und Interpret dorthin)", "default": true },
-    { "key": "spotifyClientId", "type": "string", "label": "Spotify-Client-ID für die Warteschlange (siehe Anleitung)", "default": "" },
-    { "key": "queueLength", "type": "number", "label": "Titel in der Warteschlange", "default": 5 }
+    { "key": "spotifyClientId", "type": "string", "label": "Spotify-Client-ID für die Warteschlange (siehe Anleitung)", "default": "" }
   ]
 }

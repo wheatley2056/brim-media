@@ -7,9 +7,9 @@ using Brim.Core.Widgets;
 namespace BrimMedia.Core;
 
 /// <summary>
-/// Hält Titel, Songtext, Lautstärke und Warteschlange zusammen und zeichnet die Widgets auf „Jetzt“
-/// und die Karte im Tab „Plugins“. Schickt nur, was sich geändert hat: Beim Songtext ist das eine
-/// Nachricht pro Zeile, nicht pro Takt.
+/// Hält Titel, Songtext, Lautstärke und Warteschlange zusammen und zeichnet die Widgets auf „Jetzt“.
+/// Der Tab „Plugins“ ist nur zum Ein- und Ausschalten da; Media+ legt dort nichts ab.
+/// Schickt nur, was sich geändert hat: Beim Songtext ist das eine Nachricht pro Zeile, nicht pro Takt.
 /// </summary>
 public sealed class MediaPlugin
 {
@@ -27,6 +27,12 @@ public sealed class MediaPlugin
 
     public static readonly TimeSpan LoginTimeout = TimeSpan.FromMinutes(3);
 
+    /// <summary>Längeres ist ein Mitschnitt, Podcast oder Video, kein Song: dafür gar nicht erst suchen.</summary>
+    public static readonly TimeSpan LongestSong = TimeSpan.FromMinutes(15);
+
+    /// <summary>Wartezeiten, bevor nach einem Fehler (LRCLIB überlastet, offline) erneut gesucht wird.</summary>
+    public static readonly TimeSpan[] LyricsRetries = [TimeSpan.FromSeconds(20), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(3)];
+
     public const string SetupGuide = "https://github.com/wheatley2056/brim-media#spotify-verbinden";
 
     private readonly INotchSink _sink;
@@ -39,13 +45,13 @@ public sealed class MediaPlugin
     private readonly Func<Uri, Task> _openUrl;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<(string, TileSize), string> _sentWidgets = [];
-    private string? _sentView;
 
     private IReadOnlyDictionary<string, IReadOnlyList<TileSize>> _placed = new Dictionary<string, IReadOnlyList<TileSize>>();
-    private bool _tabVisible;
     private string? _trackKey;
     private LyricsState _lyrics = LyricsState.Idle;
     private CancellationTokenSource? _lyricsFetch;
+    private int _lyricsFailures;
+    private DateTimeOffset? _lyricsRetry;
     private AppVolume? _volume;
     private DateTimeOffset _volumeRead;
     private QueueState _queue = new(QueueStatus.Setup);
@@ -76,7 +82,7 @@ public sealed class MediaPlugin
 
     public PluginSettings Settings { get; private set; }
 
-    private bool Shows(string widget) => _tabVisible || _placed.ContainsKey(widget);
+    private bool Shows(string widget) => _placed.ContainsKey(widget);
 
     /// <summary>Zeichnet im Takt von <see cref="Tick"/>, bis <paramref name="cancellationToken"/> abbricht.</summary>
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -107,6 +113,11 @@ public sealed class MediaPlugin
             {
                 OnTrackChanged(track, now);
             }
+            else if (track is not null && _lyricsRetry is { } retry && now >= retry)
+            {
+                _lyricsRetry = null;
+                StartLyricsFetch(track);
+            }
 
             if (track is not null && Shows(Views.Volume) && now - _volumeRead >= VolumePoll)
             {
@@ -132,7 +143,7 @@ public sealed class MediaPlugin
     }
 
     private MediaState State(Track? track, DateTimeOffset now) =>
-        new(track, track?.PositionAt(now) ?? TimeSpan.Zero, _lyrics, track is null ? null : _volume, _queue, Settings.QueueLength);
+        new(track, track?.PositionAt(now) ?? TimeSpan.Zero, _lyrics, track is null ? null : _volume, _queue);
 
     private void OnTrackChanged(Track? track, DateTimeOffset now)
     {
@@ -141,6 +152,8 @@ public sealed class MediaPlugin
         _lyricsFetch = null;
         _volumeRead = default; // gleich lesen, der Player kann ein anderer sein
         _queueDue = now + QueueSettle;
+        _lyricsFailures = 0;
+        _lyricsRetry = null;
         if (track is null)
         {
             _lyrics = LyricsState.Idle;
@@ -151,7 +164,18 @@ public sealed class MediaPlugin
             _lyrics = new LyricsState(LyricsStatus.Off, Lyrics.None);
             return;
         }
+        if (track.Duration > LongestSong)
+        {
+            _lyrics = new LyricsState(LyricsStatus.NotFound, Lyrics.None);
+            return;
+        }
         _lyrics = new LyricsState(LyricsStatus.Loading, Lyrics.None);
+        StartLyricsFetch(track);
+    }
+
+    private void StartLyricsFetch(Track track)
+    {
+        _lyricsFetch?.Cancel();
         var fetch = _lyricsFetch = new CancellationTokenSource();
         _ = FetchLyricsAsync(track, fetch.Token);
     }
@@ -170,6 +194,7 @@ public sealed class MediaPlugin
         }
         catch (Exception ex)
         {
+            // Nur ins Log: Das Widget zeigt dann einfach, was läuft, und es wird später erneut versucht.
             await LogAsync($"Songtext für „{track.Title}“ nicht geladen: {ex.Message}", "warn");
             result = new LyricsState(LyricsStatus.Failed, Lyrics.None);
         }
@@ -181,6 +206,10 @@ public sealed class MediaPlugin
                 return;
             }
             _lyrics = result;
+            if (result.Status == LyricsStatus.Failed && _lyricsFailures < LyricsRetries.Length)
+            {
+                _lyricsRetry = _time.GetUtcNow() + LyricsRetries[_lyricsFailures++];
+            }
         }
         finally
         {
@@ -228,7 +257,8 @@ public sealed class MediaPlugin
         catch (Exception ex)
         {
             await LogAsync($"Spotify-Warteschlange nicht geladen: {ex.Message}", "warn");
-            result = new QueueState(QueueStatus.Failed, null, "Spotify gerade nicht erreichbar");
+            // Die letzte bekannte Warteschlange bleibt stehen; sonst zeigt das Widget einfach nichts.
+            result = _queue.Queue is { } last ? new QueueState(QueueStatus.Ready, last) : new QueueState(QueueStatus.Failed);
         }
         await _gate.WaitAsync();
         try
@@ -249,16 +279,6 @@ public sealed class MediaPlugin
     public Task SetPlacedWidgetsAsync(IReadOnlyDictionary<string, IReadOnlyList<TileSize>> placed)
     {
         _placed = placed;
-        return UpdateAsync();
-    }
-
-    public Task SetTabVisibleAsync(bool visible)
-    {
-        _tabVisible = visible;
-        if (visible)
-        {
-            _queueDue = _time.GetUtcNow();
-        }
         return UpdateAsync();
     }
 
@@ -313,10 +333,6 @@ public sealed class MediaPlugin
                     break;
                 case "spotify-connect":
                     await ConnectAsync();
-                    break;
-                case "spotify-disconnect":
-                    _spotify.Disconnect();
-                    await ShowHudAsync(Glyphs.Link, "Spotify getrennt");
                     break;
                 default:
                     await LogAsync($"Unbekannte Aktion „{actionId}“", "warn");
@@ -393,13 +409,6 @@ public sealed class MediaPlugin
                     await SetWidgetAsync(id, size, widget);
                 }
             }
-        }
-        var card = Views.Card(state, _images);
-        var json = JsonSerializer.Serialize(card, PluginJson.Options);
-        if (json != _sentView)
-        {
-            _sentView = json;
-            await SendAsync(() => _sink.SetViewAsync("media", card, 10));
         }
     }
 
