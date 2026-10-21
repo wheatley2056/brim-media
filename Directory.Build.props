@@ -6,7 +6,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <Company>Brim</Company>
     <Product>Brim Media+</Product>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <BrimWindowsTfm>net10.0-windows10.0.19041.0</BrimWindowsTfm>
     <!-- Brim liegt als eigenes Repository daneben (../brim); anders mit -p:BrimRoot=… -->
     <BrimRoot Condition="'$(BrimRoot)' == ''">$(MSBuildThisFileDirectory)..\brim</BrimRoot>

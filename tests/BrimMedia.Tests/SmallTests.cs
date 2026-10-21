@@ -22,9 +22,9 @@ public class SmallTests
     [Fact]
     public void SettingsWithDefaultsAndBounds()
     {
-        var values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{"lyrics":"false","spotifyClientId":"  abc  ","queueLength":99}""")!;
+        var values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{"lyrics":"false","spotifyClientId":"  abc  "}""")!;
 
-        Assert.Equal(new PluginSettings { Lyrics = false, SpotifyClientId = "abc", QueueLength = 10 }, PluginSettings.From(values));
+        Assert.Equal(new PluginSettings { Lyrics = false, SpotifyClientId = "abc" }, PluginSettings.From(values));
         Assert.Equal(new PluginSettings(), PluginSettings.From(new Dictionary<string, JsonElement>()));
     }
 

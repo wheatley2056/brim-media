@@ -11,22 +11,12 @@ internal sealed class RecordingSink : INotchSink
 {
     public Dictionary<(string, TileSize), Widget> Widgets { get; } = [];
     public List<(string, TileSize)> WidgetSets { get; } = [];
-    public Widget? View { get; private set; }
-    public int ViewSets { get; private set; }
     public List<string> Huds { get; } = [];
     public List<string> Logs { get; } = [];
 
     public Task ShowHudAsync(HudParams hud)
     {
         Huds.Add(hud.Text ?? "");
-        return Task.CompletedTask;
-    }
-
-    public Task SetViewAsync(string id, Widget content, int order)
-    {
-        Assert.Null(WidgetValidator.Validate(content));
-        View = content;
-        ViewSets++;
         return Task.CompletedTask;
     }
 

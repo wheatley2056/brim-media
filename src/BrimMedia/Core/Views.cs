@@ -5,8 +5,9 @@ using Brim.Core.Widgets;
 namespace BrimMedia.Core;
 
 /// <summary>
-/// Widgets für „Jetzt“ und die Karte im Tab „Plugins“. Reine Funktionen von <see cref="MediaState"/>,
-/// damit nur verschickt wird, was sich geändert hat, und Tests die Ausgabe direkt prüfen können.
+/// Widgets für „Jetzt“. Media+ zeigt nur Widgets, nichts im Tab „Plugins“. Was gerade nicht geht
+/// (kein Songtext, anderer Player, LRCLIB überlastet), fällt still weg: Statt einer Meldung zeigt das
+/// Widget, was läuft. Reine Funktionen von <see cref="MediaState"/>, damit nur Änderungen verschickt werden.
 /// </summary>
 public static class Views
 {
@@ -37,13 +38,17 @@ public static class Views
 
     public static Widget LyricsWidget(TileSize size, MediaState state)
     {
-        if (LyricsEmpty(state) is { } empty)
+        var large = size is TileSize.Large or TileSize.Full;
+        if (state.Track is not { } track)
         {
-            return size is TileSize.Large or TileSize.Full
-                ? TileCard.Card(LyricsHeader(state), empty)
-                : empty;
+            return TileCard.Empty(Glyphs.MusicNote, "Gerade keine Musik");
         }
         var lyrics = state.Lyrics.Lyrics;
+        if (state.Lyrics.Status != LyricsStatus.Found || lyrics.IsEmpty)
+        {
+            // Kein Text (noch nicht geladen, keiner gefunden, Quelle gerade weg): einfach zeigen, was läuft.
+            return NowPlaying(track, size, lyrics.Instrumental ? "Instrumental" : null);
+        }
         if (!lyrics.IsSynced)
         {
             var plain = new ListWidget(lyrics.Plain.Take(80).Select(l => (Widget)new TextWidget(Clip(l)) { Style = TextStyle.Secondary, FontSize = 12 }).ToList())
@@ -52,49 +57,59 @@ public static class Views
                 Scrollable = true,
                 Grow = 1,
             };
-            return size is TileSize.Large or TileSize.Full
-                ? TileCard.Card(LyricsHeader(state, "ohne Zeitstempel"), plain)
-                : plain;
+            return large ? TileCard.Card(LyricsHeader(track), plain) : plain;
         }
 
         var index = lyrics.IndexAt(state.Position);
         var big = size is TileSize.Wide or TileSize.Full;
-        if (size is TileSize.Small or TileSize.Medium or TileSize.Wide)
+        if (!large)
         {
             return Column(
                 CurrentLine(lyrics, index, big ? 16 : 14),
                 Line(lyrics, index + 1, TextStyle.Secondary, 12));
         }
-        var rows = new List<Widget> { LyricsHeader(state) };
-        rows.Add(Line(lyrics, index - 1, TextStyle.Caption, 12));
-        rows.Add(CurrentLine(lyrics, index, big ? 18 : 15));
-        rows.Add(Line(lyrics, index + 1, TextStyle.Secondary, 13));
-        rows.Add(Line(lyrics, index + 2, TextStyle.Secondary, 13));
-        return Column(rows, Justify.SpaceBetween);
+        // Groß: eine Zeile davor, zwei danach; ein Klick auf eine Zeile springt dorthin.
+        return Column(
+            [
+                LyricsHeader(track),
+                Seekable(lyrics, index - 1, Line(lyrics, index - 1, TextStyle.Caption, 12)),
+                Seekable(lyrics, index, CurrentLine(lyrics, index, big ? 18 : 15)),
+                Seekable(lyrics, index + 1, Line(lyrics, index + 1, TextStyle.Secondary, 13)),
+                Seekable(lyrics, index + 2, Line(lyrics, index + 2, TextStyle.Secondary, 13)),
+            ],
+            Justify.SpaceBetween);
     }
 
-    private static StackWidget LyricsHeader(MediaState state, string? trailing = null) =>
-        TileCard.Header(Icons.Lyrics, LyricsColor, state.Track is { } t ? Clip(t.Title, 60) : "Songtext", trailing);
+    private static StackWidget LyricsHeader(Track track) =>
+        TileCard.Header(Icons.Lyrics, LyricsColor, Clip(track.Title, 60));
 
-    /// <summary>Kein Text zum Zeigen: warum nicht.</summary>
-    private static Widget? LyricsEmpty(MediaState state)
+    /// <summary>Titel und Interpret, wenn es keinen Songtext gibt.</summary>
+    private static Widget NowPlaying(Track track, TileSize size, string? note)
     {
-        if (state.Track is null)
+        var subtitle = string.Join(" · ", new[] { track.Artist, note }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var lines = new StackWidget(
+            new TextWidget(Clip(track.Title, 120)) { Style = TextStyle.Title, FontSize = size is TileSize.Small or TileSize.Medium ? 14 : 16 },
+            new TextWidget(Clip(subtitle, 120)) { Style = TextStyle.Secondary, FontSize = 12 })
         {
-            return TileCard.Empty(Glyphs.MusicNote, "Gerade keine Musik");
-        }
-        return state.Lyrics.Status switch
-        {
-            LyricsStatus.Off => TileCard.Empty(Icons.Lyrics, "Songtexte sind ausgeschaltet"),
-            LyricsStatus.Idle or LyricsStatus.Loading => TileCard.Empty(Icons.Lyrics, "Songtext wird gesucht …"),
-            LyricsStatus.NotFound => TileCard.Empty(Icons.Lyrics, "Kein Songtext gefunden"),
-            LyricsStatus.Failed => TileCard.Empty(Icons.Warning, "Songtexte gerade nicht erreichbar"),
-            _ when state.Lyrics.Lyrics.Instrumental && !state.Lyrics.Lyrics.IsSynced && state.Lyrics.Lyrics.Plain.Count == 0
-                => TileCard.Empty(Glyphs.MusicNote, "Instrumental"),
-            _ when state.Lyrics.Lyrics.IsEmpty => TileCard.Empty(Icons.Lyrics, "Kein Songtext gefunden"),
-            _ => null,
+            Orientation = StackOrientation.Vertical,
+            Align = CrossAlign.Stretch,
+            Spacing = 2,
+            Grow = 1,
         };
+        var row = new StackWidget(new IconWidget(Glyphs.MusicNote) { Size = 16, Color = LyricsColor }, lines) { Spacing = 10, Grow = 1 };
+        return size is TileSize.Large or TileSize.Full
+            ? TileCard.Card(TileCard.Header(Icons.Lyrics, LyricsColor, "Songtext"), row)
+            : row;
     }
+
+    private static Widget Seekable(Lyrics lyrics, int index, TextWidget line) =>
+        index >= 0 && index < lyrics.Synced.Count
+            ? new StackWidget(line with { Grow = 1 })
+            {
+                ActionId = "seek:" + ((long)lyrics.Synced[index].Time.TotalMilliseconds).ToString(CultureInfo.InvariantCulture),
+                AccessibleName = $"Zu {Duration(lyrics.Synced[index].Time)} springen",
+            }
+            : line;
 
     private static TextWidget CurrentLine(Lyrics lyrics, int index, double fontSize) =>
         new(index < 0 ? Interlude : Text(lyrics, index)) { Style = TextStyle.Title, FontSize = fontSize, Key = "current" };
@@ -115,7 +130,7 @@ public static class Views
         }
         if (state.Volume is not { } volume)
         {
-            return TileCard.Empty(Glyphs.Volume, $"{Clip(state.Track.SourceName, 40)} gibt gerade keinen Ton aus");
+            return TileCard.Empty(Glyphs.Volume, Clip(state.Track.SourceName, 40));
         }
         var percent = Percent(volume);
         var mute = new ButtonWidget("mute")
@@ -165,32 +180,30 @@ public static class Views
 
     public static Widget QueueWidget(TileSize size, MediaState state, IImageLoader? images = null)
     {
+        var large = size is TileSize.Large or TileSize.Full;
         var header = TileCard.Header(Icons.Queue, SpotifyGreen, "Als Nächstes");
         var queue = state.Queue;
         Widget? empty = queue.Status switch
         {
-            QueueStatus.Setup => Hint("Spotify verbinden für die Warteschlange", "spotify-connect", "Einrichten"),
-            QueueStatus.Disconnected => Hint("Mit Spotify verbinden", "spotify-connect", "Verbinden"),
+            // Verbinden nur anbieten, wenn Spotify wirklich spielt; sonst gibt es nichts zu verbinden.
+            QueueStatus.Setup or QueueStatus.Disconnected when state.Track is { IsSpotify: true } => Connect(queue.Status),
             QueueStatus.Connecting => TileCard.Empty(Glyphs.Link, "Anmeldung im Browser …"),
-            QueueStatus.NotSpotify => TileCard.Empty(Icons.Queue, "Warteschlange gibt es nur für Spotify"),
-            QueueStatus.Loading when queue.Queue is null => TileCard.Empty(Icons.Queue, "Wird geladen …"),
-            QueueStatus.Failed => TileCard.Empty(Icons.Warning, Clip(queue.Message ?? "Spotify gerade nicht erreichbar", 80)),
-            _ when queue.Queue is not { Next.Count: > 0 } => TileCard.Empty(Icons.Queue, "Nichts in der Warteschlange"),
+            _ when queue.Status != QueueStatus.Ready || queue.Queue is not { Next.Count: > 0 } => TileCard.Empty(Icons.Queue, "Nichts als Nächstes"),
             _ => null,
         };
         if (empty is not null)
         {
-            return size is TileSize.Large or TileSize.Full ? TileCard.Card(header, empty) : empty;
+            return large ? TileCard.Card(header, empty) : empty;
         }
         var next = queue.Queue!.Next;
-        if (size is TileSize.Small or TileSize.Medium or TileSize.Wide)
+        if (!large)
         {
             return Column(
                 new TextWidget("Als Nächstes") { Style = TextStyle.Caption },
                 QueueRow(next[0], images, thumb: size == TileSize.Wide));
         }
         var rows = new List<Widget> { header };
-        rows.AddRange(next.Take(Math.Min(3, state.QueueLength)).Select(item => QueueRow(item, images, thumb: true)));
+        rows.AddRange(next.Take(3).Select(item => QueueRow(item, images, thumb: true)));
         return Column(rows, Justify.SpaceBetween);
     }
 
@@ -219,100 +232,19 @@ public static class Views
         return new StackWidget(children) { Spacing = 8 };
     }
 
-    private static Widget Hint(string text, string actionId, string label) =>
+    private static Widget Connect(QueueStatus status) =>
         new StackWidget(
-            new TextWidget(text) { Style = TextStyle.Secondary, FontSize = 12, Grow = 1 },
-            new ButtonWidget(actionId) { Kind = ButtonKind.Secondary, Glyph = Glyphs.Link, Label = label })
+            new TextWidget("Warteschlange von Spotify zeigen") { Style = TextStyle.Secondary, FontSize = 12, Grow = 1 },
+            new ButtonWidget("spotify-connect")
+            {
+                Kind = ButtonKind.Secondary,
+                Glyph = Glyphs.Link,
+                Label = status == QueueStatus.Setup ? "Einrichten" : "Verbinden",
+            })
         {
             Spacing = 8,
             Grow = 1,
         };
-
-    // ───────── Karte im Tab „Plugins“ ─────────
-
-    public static Widget Card(MediaState state, IImageLoader? images)
-    {
-        var children = new List<Widget>();
-        var title = state.Track is { } track ? $"{Clip(track.Title, 80)} · {Clip(track.Artist, 60)}" : "Media+";
-        children.Add(new StackWidget(
-            new IconWidget(Glyphs.MusicNote) { Size = 14, Color = LyricsColor },
-            new TextWidget(title) { Style = TextStyle.Secondary, FontSize = 12, Grow = 1 },
-            new TextWidget(state.Track?.SourceName ?? "") { Style = TextStyle.Caption })
-        {
-            Spacing = 8,
-        });
-
-        children.Add(CardLyrics(state));
-
-        if (state.Track is not null)
-        {
-            children.Add(VolumeWidget(TileSize.Wide, state));
-        }
-
-        children.Add(TileCard.Header(Icons.Queue, SpotifyGreen, "Als Nächstes",
-            state.Queue.Status is QueueStatus.Ready or QueueStatus.Loading or QueueStatus.NotSpotify ? "Spotify" : null));
-        if (state.Queue is { Status: QueueStatus.Ready or QueueStatus.Loading, Queue.Next.Count: > 0 } ready)
-        {
-            children.AddRange(ready.Queue!.Next.Take(state.QueueLength).Select(item => QueueRow(item, images, thumb: true)));
-            children.Add(new StackWidget(
-                new SpacerWidget { Grow = 1 },
-                new ButtonWidget("spotify-disconnect") { Kind = ButtonKind.Subtle, Label = "Spotify trennen", GlyphSize = 12 }));
-        }
-        else
-        {
-            children.Add(QueueWidget(TileSize.Wide, state, images));
-        }
-
-        return new StackWidget(children)
-        {
-            Orientation = StackOrientation.Vertical,
-            Align = CrossAlign.Stretch,
-            Spacing = 10,
-            Background = BrimColors.Graphite,
-            CornerRadius = 14,
-            Padding = (12, 10, 12, 12),
-        };
-    }
-
-    /// <summary>Im Tab ist Platz: zwei Zeilen davor, sechs danach; ein Klick springt zur Zeile.</summary>
-    private static Widget CardLyrics(MediaState state)
-    {
-        if (LyricsEmpty(state) is { } empty)
-        {
-            return empty;
-        }
-        var lyrics = state.Lyrics.Lyrics;
-        if (!lyrics.IsSynced)
-        {
-            return new ListWidget(lyrics.Plain.Take(150).Select(l => (Widget)new TextWidget(Clip(l)) { Style = TextStyle.Body }).ToList())
-            {
-                Spacing = 3,
-                Scrollable = true,
-            };
-        }
-        var index = lyrics.IndexAt(state.Position);
-        var first = Math.Max(0, index - 2);
-        var items = new List<Widget>();
-        for (var i = first; i < Math.Min(lyrics.Synced.Count, first + 9); i++)
-        {
-            var line = lyrics.Synced[i];
-            var current = i == index;
-            items.Add(new StackWidget(new TextWidget(Text(lyrics, i))
-            {
-                Style = current ? TextStyle.Title : TextStyle.Secondary,
-                FontSize = current ? 17 : 14,
-                Color = current ? null : i < index ? "#6A6E78" : null,
-                Wrap = current,
-                Grow = 1,
-            })
-            {
-                ActionId = "seek:" + ((long)line.Time.TotalMilliseconds).ToString(CultureInfo.InvariantCulture),
-                AccessibleName = $"Zu {Duration(line.Time)} springen: {line.Text}",
-                Padding = (0, 2, 0, 2),
-            });
-        }
-        return new ListWidget(items) { Spacing = 2 };
-    }
 
     // ───────── Hilfen ─────────
 

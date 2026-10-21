@@ -89,7 +89,7 @@ public class MediaPluginTests
         _player.Current = Tracks.Spotify("Another One Bites the Dust");
         await plugin.UpdateAsync();
 
-        await Eventually(() => Texts(_sink.Widgets[(Views.Lyrics, TileSize.Large)]).Contains("Kein Songtext gefunden"));
+        await Eventually(() => Texts(_sink.Widgets[(Views.Lyrics, TileSize.Large)]) == "Songtext | Another One Bites the Dust | Queen");
         Assert.Equal(["Bohemian Rhapsody", "Another One Bites the Dust"], _lyrics.Requests);
     }
 
@@ -100,20 +100,43 @@ public class MediaPluginTests
         _player.Current = Tracks.Spotify();
         await plugin.SetPlacedWidgetsAsync(Placed((Views.Lyrics, TileSize.Medium)));
 
-        Assert.Contains("ausgeschaltet", Texts(_sink.Widgets[(Views.Lyrics, TileSize.Medium)]));
+        Assert.Equal("Bohemian Rhapsody | Queen", Texts(_sink.Widgets[(Views.Lyrics, TileSize.Medium)]));
         Assert.Empty(_lyrics.Requests);
     }
 
     [Fact]
-    public async Task NetworkErrorShowsAndLogs()
+    public async Task NetworkErrorShowsTheTrackAndRetriesLater()
     {
         _lyrics.Error = new HttpRequestException("offline");
         var plugin = Create();
-        _player.Current = Tracks.Spotify();
+        _player.Current = Tracks.Spotify(playing: false);
         await plugin.SetPlacedWidgetsAsync(Placed((Views.Lyrics, TileSize.Medium)));
+        await Eventually(() => _sink.Logs.Any(l => l.Contains("offline")));
+        await plugin.UpdateAsync();
 
-        await Eventually(() => Texts(_sink.Widgets[(Views.Lyrics, TileSize.Medium)]).Contains("nicht erreichbar"));
-        Assert.Contains(_sink.Logs, l => l.Contains("offline"));
+        Assert.Equal("Bohemian Rhapsody | Queen", Texts(_sink.Widgets[(Views.Lyrics, TileSize.Medium)]));
+        Assert.Empty(_sink.Huds);
+
+        _lyrics.Error = null;
+        await Eventually(() =>
+        {
+            // Der Fehler kommt im Hintergrund an; erst danach läuft die Wartezeit.
+            _time.Advance(MediaPlugin.LyricsRetries[0]);
+            plugin.UpdateAsync().GetAwaiter().GetResult();
+            return Texts(_sink.Widgets[(Views.Lyrics, TileSize.Medium)]) == "♪ | First line";
+        });
+        Assert.Equal(2, _lyrics.Requests.Count);
+    }
+
+    [Fact]
+    public async Task LongRecordingsAreNotSearched()
+    {
+        var plugin = Create();
+        _player.Current = Tracks.Browser() with { Title = "Herr Bergmann spielt PORTAL", Artist = "Herr Bergmann", Duration = TimeSpan.FromHours(2) };
+        await plugin.SetPlacedWidgetsAsync(Placed((Views.Lyrics, TileSize.Large)));
+
+        Assert.Empty(_lyrics.Requests);
+        Assert.Equal("Songtext | Herr Bergmann spielt PORTAL | Herr Bergmann", Texts(_sink.Widgets[(Views.Lyrics, TileSize.Large)]));
     }
 
     [Fact]
@@ -121,8 +144,8 @@ public class MediaPluginTests
     {
         var plugin = Create();
         _player.Current = Tracks.Spotify(position: TimeSpan.FromSeconds(6));
-        await plugin.UpdateAsync();
-        await Eventually(() => Walk(_sink.View).OfType<StackWidget>().Any(s => s.ActionId == "seek:9000"));
+        await plugin.SetPlacedWidgetsAsync(Placed((Views.Lyrics, TileSize.Large)));
+        await Eventually(() => Walk(_sink.Widgets[(Views.Lyrics, TileSize.Large)]).OfType<StackWidget>().Any(s => s.ActionId == "seek:9000"));
 
         await plugin.HandleActionAsync("seek:9000", null);
 
@@ -155,16 +178,20 @@ public class MediaPluginTests
         _player.Current = Tracks.Browser();
         await plugin.SetPlacedWidgetsAsync(Placed((Views.Volume, TileSize.Small)));
 
-        Assert.Contains("gibt gerade keinen Ton aus", Texts(_sink.Widgets[(Views.Volume, TileSize.Small)]));
+        Assert.Equal("Chrome", Texts(_sink.Widgets[(Views.Volume, TileSize.Small)]));
     }
 
     [Fact]
     public async Task QueueNeedsAClientIdFirst()
     {
         var plugin = Create();
-        _player.Current = Tracks.Spotify();
+        _player.Current = Tracks.Browser();
         await plugin.SetPlacedWidgetsAsync(Placed((Views.Queue, TileSize.Large)));
-        Assert.Contains("Spotify verbinden", Texts(_sink.Widgets[(Views.Queue, TileSize.Large)]));
+        Assert.Equal("Als Nächstes | Nichts als Nächstes", Texts(_sink.Widgets[(Views.Queue, TileSize.Large)]));
+
+        _player.Current = Tracks.Spotify();
+        await plugin.UpdateAsync();
+        Assert.Contains(Walk(_sink.Widgets[(Views.Queue, TileSize.Large)]).OfType<ButtonWidget>(), b => b.ActionId == "spotify-connect" && b.Label == "Einrichten");
 
         await plugin.HandleActionAsync("spotify-connect", null);
 
@@ -188,7 +215,7 @@ public class MediaPluginTests
 
         _player.Current = Tracks.Browser();
         await plugin.UpdateAsync();
-        Assert.Contains("nur für Spotify", Texts(_sink.Widgets[(Views.Queue, TileSize.Medium)]));
+        Assert.Equal("Nichts als Nächstes", Texts(_sink.Widgets[(Views.Queue, TileSize.Medium)]));
     }
 
     [Fact]
@@ -211,14 +238,13 @@ public class MediaPluginTests
         _player.Current = Tracks.Spotify(position: TimeSpan.FromSeconds(3));
         var all = Enum.GetValues<TileSize>().SelectMany(s => new[] { (Views.Lyrics, s), (Views.Volume, s), (Views.Queue, s) }).ToArray();
 
-        await plugin.SetTabVisibleAsync(true);
         await plugin.SetPlacedWidgetsAsync(Placed(all));
         _time.Advance(MediaPlugin.QueueSettle);
         await plugin.UpdateAsync();
 
         // RecordingSink prüft jede Nachricht mit Brims WidgetValidator.
-        await Eventually(() => Texts(_sink.View).Contains("Next"));
+        await Eventually(() => Texts(_sink.Widgets[(Views.Queue, TileSize.Full)]).Contains("Then"));
         Assert.Equal(all.Length, _sink.Widgets.Count);
-        Assert.Contains("Second line", Texts(_sink.View));
+        Assert.Contains("Second line", Texts(_sink.Widgets[(Views.Lyrics, TileSize.Full)]));
     }
 }

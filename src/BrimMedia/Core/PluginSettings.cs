@@ -8,7 +8,6 @@ public sealed record PluginSettings
 {
     public bool Lyrics { get; init; } = true;
     public string SpotifyClientId { get; init; } = "";
-    public int QueueLength { get; init; } = 5;
 
     public static PluginSettings From(IReadOnlyDictionary<string, JsonElement> values)
     {
@@ -17,7 +16,6 @@ public sealed record PluginSettings
         {
             Lyrics = Flag(values, "lyrics", defaults.Lyrics),
             SpotifyClientId = Text(values, "spotifyClientId").Trim(),
-            QueueLength = (int)Number(values, "queueLength", defaults.QueueLength, 1, 10),
         };
     }
 

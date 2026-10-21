@@ -30,5 +30,4 @@ public sealed record MediaState(
     TimeSpan Position,
     LyricsState Lyrics,
     AppVolume? Volume,
-    QueueState Queue,
-    int QueueLength);
+    QueueState Queue);

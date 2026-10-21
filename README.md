@@ -4,9 +4,11 @@ Plugin für [Brim](https://github.com/wheatley2056/brim), die Notch für Windows
 
 | Was | Wo |
 |---|---|
-| **Songtext, der mitläuft** | Widget **Songtext** auf „Jetzt“ (mittel und breit: aktuelle und nächste Zeile; groß und voll: mit Zeile davor und zwei danach). Im Tab **Plugins** mehr Zeilen; ein Klick auf eine Zeile springt dorthin. Texte ohne Zeitstempel erscheinen als scrollbare Liste. |
+| **Songtext, der mitläuft** | Widget **Songtext** auf „Jetzt“ (mittel und breit: aktuelle und nächste Zeile; groß und voll: mit Zeile davor und zwei danach). In den großen Größen springt ein Klick auf eine Zeile dorthin. Texte ohne Zeitstempel erscheinen als scrollbare Liste. |
 | **Musiklautstärke** | Widget **Musiklautstärke**: Schieber und Stummschalten nur für die App, die gerade spielt, unabhängig von der Systemlautstärke. |
 | **Als Nächstes** (Spotify, optional) | Widget **Als Nächstes**: die nächsten Titel der Spotify-Warteschlange mit Cover. Braucht eine einmalige Anmeldung, siehe unten. |
+
+Media+ zeigt alles nur als Widgets; im Tab **Plugins** wird es nur ein- und ausgeschaltet. Was gerade nicht geht, fällt still weg: Gibt es keinen Songtext (oder ist LRCLIB kurz nicht erreichbar), zeigt das Songtext-Widget Titel und Interpret und versucht es später erneut. Läuft nicht Spotify, bleibt **Als Nächstes** leer. Aufnahmen über 15 Minuten (Podcasts, lange Videos) werden gar nicht erst gesucht.
 
 Den Titel liest Media+ wie Brim über die Windows-Medienschnittstelle. Songtexte und Lautstärke gehen deshalb mit jedem Player, der sich dort meldet: Spotify, YouTube Music oder YouTube im Browser, Apple Music, Tidal, VLC und andere.
 
@@ -41,9 +43,9 @@ Die Warteschlange gibt es nicht über Windows, nur über die Spotify-Web-API. Sp
 2. Name und Beschreibung beliebig, z. B. „Brim“. Bei **Redirect URIs** genau `http://127.0.0.1:47823/callback` eintragen und hinzufügen. Bei den APIs **Web API** ankreuzen. Speichern.
 3. In der App unter **Settings** die **Client ID** kopieren.
 4. In Brim: Einstellungen → Plugins → Media+ → **Spotify-Client-ID** einfügen.
-5. Im Widget **Als Nächstes** oder im Tab **Plugins** auf **Verbinden**. Der Browser öffnet die Anmeldung bei Spotify; danach steht dort „Mit Spotify verbunden“.
+5. Spotify abspielen und im Widget **Als Nächstes** auf **Verbinden** tippen. Der Browser öffnet die Anmeldung bei Spotify; danach steht dort „Mit Spotify verbunden“.
 
-Media+ fragt nur Leserechte an (`user-read-playback-state`, `user-read-currently-playing`) und nutzt PKCE, also kein Client-Secret. Die Anmeldung liegt mit Windows (DPAPI) verschlüsselt in `%LocalAppData%\Brim\PluginData\de.brim.media\`. **Spotify trennen** im Tab **Plugins** löscht sie; widerrufen lässt sie sich auch unter [spotify.com/account/apps](https://www.spotify.com/account/apps/).
+Media+ fragt nur Leserechte an (`user-read-playback-state`, `user-read-currently-playing`) und nutzt PKCE, also kein Client-Secret. Die Anmeldung liegt mit Windows (DPAPI) verschlüsselt in `%LocalAppData%\Brim\PluginData\de.brim.media\`. Wer die Client-ID in den Einstellungen leert oder ändert, wird abgemeldet und die Anmeldung gelöscht; widerrufen lässt sie sich auch unter [spotify.com/account/apps](https://www.spotify.com/account/apps/).
 
 ## Einstellungen
 
@@ -51,7 +53,6 @@ Media+ fragt nur Leserechte an (`user-read-playback-state`, `user-read-currently
 |---|---|---|
 | Songtexte von lrclib.net laden | an | |
 | Spotify-Client-ID | leer | für die Warteschlange |
-| Titel in der Warteschlange | 5 | im Tab **Plugins** (1–10) |
 
 ## Entwickeln
 
